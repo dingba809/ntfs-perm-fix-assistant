@@ -1,0 +1,13 @@
+ntfs:
+  mount_point: /mnt/your-ntfs-disk
+  owner: 1000:1000
+  dir_mode: "0775"
+  file_mode: "0664"
+
+execution:
+  dry_run: false
+  recursive: true
+
+logging:
+  level: info
+  with_timestamp: true
