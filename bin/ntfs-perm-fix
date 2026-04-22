@@ -6,6 +6,10 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$ROOT_DIR/lib/common.sh"
 # shellcheck source=../lib/detect.sh
 source "$ROOT_DIR/lib/detect.sh"
+# shellcheck source=../lib/mount_fix.sh
+source "$ROOT_DIR/lib/mount_fix.sh"
+# shellcheck source=../lib/report.sh
+source "$ROOT_DIR/lib/report.sh"
 
 config_path="$(default_config_path)"
 dry_run=""
@@ -15,6 +19,8 @@ usage() {
 Usage:
   ntfs-perm-fix [--config <path>] [--dry-run]
   ntfs-perm-fix check <mountpoint>
+  ntfs-perm-fix plan <mountpoint>
+  ntfs-perm-fix report
 USAGE
 }
 
@@ -32,6 +38,39 @@ run_check() {
   fi
 
   collect_mount_info "$mountpoint"
+}
+
+run_plan() {
+  local mountpoint="$1"
+  local mount_info
+  local source_spec
+  local raw_fs
+  local recommended_driver
+  local fstab_line
+  local report_paths
+
+  mount_info="$(run_check "$mountpoint")"
+  source_spec="$(printf '%s\n' "$mount_info" | awk -F= '/^source=/{print $2; exit}')"
+  raw_fs="$(printf '%s\n' "$mount_info" | awk -F= '/^fstype=/{print $2; exit}')"
+  recommended_driver="$(recommend_driver "$raw_fs")"
+  fstab_line="$(build_fstab_line "$source_spec" "$mountpoint" "$recommended_driver" "1000" "1000" "0022")"
+
+  report_paths="$(write_report_files "$ROOT_DIR/logs" "plan" "$mountpoint" "warning")"
+
+  printf '%s\n' "$report_paths"
+  printf '建议fstab: %s\n' "$fstab_line"
+}
+
+run_report() {
+  local latest_report
+
+  latest_report="$(ls -1t "$ROOT_DIR"/logs/report-*.txt 2>/dev/null | head -n 1 || true)"
+  if [[ -z "$latest_report" ]]; then
+    log_error "no report found in $ROOT_DIR/logs"
+    return 1
+  fi
+
+  cat "$latest_report"
 }
 
 if [[ "${1:-}" == "check" ]]; then
@@ -53,6 +92,41 @@ if [[ "${1:-}" == "check" ]]; then
   fi
 
   run_check "$mountpoint"
+  exit $?
+fi
+
+if [[ "${1:-}" == "plan" ]]; then
+  shift
+
+  if [[ $# -lt 1 || -z "${1:-}" ]]; then
+    log_error "plan requires a mountpoint"
+    usage
+    exit 1
+  fi
+
+  mountpoint="$1"
+  shift
+
+  if [[ $# -gt 0 ]]; then
+    log_error "unexpected argument for plan: $1"
+    usage
+    exit 1
+  fi
+
+  run_plan "$mountpoint"
+  exit $?
+fi
+
+if [[ "${1:-}" == "report" ]]; then
+  shift
+
+  if [[ $# -gt 0 ]]; then
+    log_error "report does not accept arguments"
+    usage
+    exit 1
+  fi
+
+  run_report
   exit $?
 fi
 

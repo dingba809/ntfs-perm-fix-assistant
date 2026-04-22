@@ -1,0 +1,2 @@
+# /etc/fstab sample for NTFS mount permission repair
+UUID=ABCD /mnt/data ntfs3 defaults,uid=1000,gid=1000,umask=0022 0 0
