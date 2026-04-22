@@ -8,6 +8,8 @@ source "$ROOT_DIR/lib/common.sh"
 source "$ROOT_DIR/lib/detect.sh"
 # shellcheck source=../lib/mount_fix.sh
 source "$ROOT_DIR/lib/mount_fix.sh"
+# shellcheck source=../lib/tree_fix.sh
+source "$ROOT_DIR/lib/tree_fix.sh"
 # shellcheck source=../lib/report.sh
 source "$ROOT_DIR/lib/report.sh"
 
@@ -20,6 +22,7 @@ Usage:
   ntfs-perm-fix [--config <path>] [--dry-run]
   ntfs-perm-fix check <mountpoint>
   ntfs-perm-fix plan <mountpoint>
+  ntfs-perm-fix apply <mountpoint>
   ntfs-perm-fix report
 USAGE
 }
@@ -88,6 +91,56 @@ run_report() {
   cat "$latest_report"
 }
 
+run_apply() {
+  local mountpoint="$1"
+  local mount_info
+  local raw_fs
+  local normalized_fs
+  local driver
+  local issue_counts
+  local report_paths
+  local result_status="success"
+  local total_issues="0"
+  local apply_mode="apply"
+
+  require_root || return 1
+
+  if ! path_exists "$mountpoint"; then
+    log_error "path not found: $mountpoint"
+    return 1
+  fi
+
+  if ! is_mountpoint_path "$mountpoint"; then
+    log_error "not a mountpoint: $mountpoint"
+    return 1
+  fi
+
+  mount_info="$(collect_mount_info "$mountpoint")"
+  raw_fs="$(mount_info_value "$mount_info" "fstype")"
+  normalized_fs="$(classify_fs "$raw_fs")"
+  driver="$(mount_info_value "$mount_info" "driver" || true)"
+
+  if [[ "$normalized_fs" != "ntfs" && "$raw_fs" != "ntfs3" && "$driver" != "ntfs3" ]]; then
+    log_error "NTFS filesystem required for apply: $mountpoint (got: $raw_fs)"
+    return 1
+  fi
+
+  if [[ "$dry_run" == "true" ]]; then
+    apply_mode="dry-run"
+  fi
+
+  issue_counts="$(apply_tree_permissions "$mountpoint" "$apply_mode")"
+  if total_issues="$(mount_info_value "$issue_counts" "total_issues")"; then
+    if [[ "$total_issues" != "0" ]]; then
+      result_status="warning"
+    fi
+  fi
+
+  report_paths="$(write_report_files "$ROOT_DIR/logs" "apply" "$mountpoint" "$result_status")"
+  printf '%s\n' "$report_paths"
+  printf '%s\n' "$issue_counts"
+}
+
 if [[ "${1:-}" == "check" ]]; then
   shift
 
@@ -142,6 +195,39 @@ if [[ "${1:-}" == "report" ]]; then
   fi
 
   run_report
+  exit $?
+fi
+
+if [[ "${1:-}" == "apply" ]]; then
+  shift
+
+  mountpoint=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --dry-run)
+        dry_run="true"
+        shift
+        ;;
+      *)
+        if [[ -z "${mountpoint:-}" ]]; then
+          mountpoint="$1"
+          shift
+        else
+          log_error "unexpected argument for apply: $1"
+          usage
+          exit 1
+        fi
+        ;;
+    esac
+  done
+
+  if [[ -z "${mountpoint:-}" ]]; then
+    log_error "apply requires a mountpoint"
+    usage
+    exit 1
+  fi
+
+  run_apply "$mountpoint"
   exit $?
 fi
 

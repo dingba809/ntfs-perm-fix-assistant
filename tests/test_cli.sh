@@ -8,6 +8,50 @@ fail() {
   exit 1
 }
 
+assert_contains() {
+  local content="$1"
+  local pattern="$2"
+  local name="$3"
+
+  if [[ "$content" != *"$pattern"* ]]; then
+    fail "$name: expected '$pattern', got '$content'"
+  fi
+}
+
+make_temp_root() {
+  local temp_root
+  temp_root="$(mktemp -d)"
+  mkdir -p "$temp_root/bin" "$temp_root/logs"
+  ln -s "$ROOT_DIR/lib" "$temp_root/lib"
+  ln -s "$ROOT_DIR/bin/ntfs-perm-fix" "$temp_root/bin/ntfs-perm-fix"
+  printf '%s\n' "$temp_root"
+}
+
+setup_fake_bin() {
+  local dir
+  dir="$(mktemp -d)"
+  printf '%s\n' "$dir"
+}
+
+make_stub() {
+  local stub_dir="$1"
+  local cmd_name="$2"
+  local body="$3"
+
+  cat >"$stub_dir/$cmd_name" <<STUB
+#!/usr/bin/env bash
+$body
+STUB
+  chmod +x "$stub_dir/$cmd_name"
+}
+
+extract_report_path() {
+  local output="$1"
+  local key="$2"
+
+  printf '%s\n' "$output" | awk -F= -v want_key="$key" '$1 == want_key {sub(/^[^=]*=/, "", $0); print $0; exit}'
+}
+
 test_config_missing_value() {
   local output
   local status
@@ -70,17 +114,174 @@ test_check_not_mountpoint() {
 }
 
 test_check_root_mountpoint() {
+  local temp_root
+  local fake_bin
+  local mount_dir
   local output
-  output="$($ROOT_DIR/bin/ntfs-perm-fix check /)"
 
-  if [[ "$output" != *"mountpoint=/"* ]]; then
+  temp_root="$(make_temp_root)"
+  fake_bin="$(setup_fake_bin)"
+  mount_dir="$(mktemp -d)"
+
+  make_stub "$fake_bin" "mountpoint" "if [[ \"\$1\" == '-q' && \"\$3\" == '$mount_dir' ]]; then exit 0; fi; exit 1"
+  make_stub "$fake_bin" "findmnt" "if [[ \"\$1\" == '-n' ]]; then echo '/dev/sdb1 ntfs3 rw,uid=1000'; exit 0; fi; exit 1"
+
+  output="$(PATH="$fake_bin:$PATH" "$temp_root/bin/ntfs-perm-fix" check "$mount_dir")"
+
+  if [[ "$output" != *"mountpoint=$mount_dir"* ]]; then
     fail "check should print mount info"
   fi
+
+  rm -rf "$temp_root" "$fake_bin" "$mount_dir"
+}
+
+test_apply_requires_root() {
+  local output
+  local status
+
+  set +e
+  output="$($ROOT_DIR/bin/ntfs-perm-fix apply /tmp 2>&1)"
+  status=$?
+  set -e
+
+  if [[ "$status" -eq 0 ]]; then
+    fail "apply should fail without root privileges"
+  fi
+
+  assert_contains "$output" "must be run as root" "apply root requirement"
+}
+
+test_apply_rejects_non_ntfs_mountpoint() {
+  local temp_root
+  local fake_bin
+  local mount_dir
+  local output
+  local status
+
+  if ! command -v unshare >/dev/null 2>&1; then
+    echo "[SKIP] unshare not available, skip root-only apply tests"
+    return 0
+  fi
+
+  temp_root="$(make_temp_root)"
+  fake_bin="$(setup_fake_bin)"
+  mount_dir="$(mktemp -d)"
+
+  make_stub "$fake_bin" "mountpoint" "if [[ \"\$1\" == '-q' && \"\$3\" == '$mount_dir' ]]; then exit 0; fi; exit 1"
+  make_stub "$fake_bin" "findmnt" "if [[ \"\$1\" == '-n' ]]; then echo '/dev/sdb1 ext4 rw'; exit 0; fi; exit 1"
+
+  set +e
+  output="$(PATH="$fake_bin:$PATH" unshare -Ur "$temp_root/bin/ntfs-perm-fix" apply "$mount_dir" 2>&1)"
+  status=$?
+  set -e
+
+  if [[ "$status" -eq 0 ]]; then
+    fail "apply should fail on non-ntfs mountpoint"
+  fi
+
+  if [[ "$output" != *"NTFS"* && "$output" != *"ntfs"* ]]; then
+    fail "apply should report ntfs validation failure"
+  fi
+
+  rm -rf "$temp_root" "$fake_bin" "$mount_dir"
+}
+
+test_apply_accepts_ntfs3_success_path() {
+  local temp_root
+  local fake_bin
+  local mount_dir
+  local file_path
+  local output
+  local status
+  local text_report
+  local json_report
+
+  if ! command -v unshare >/dev/null 2>&1; then
+    echo "[SKIP] unshare not available, skip root-only apply tests"
+    return 0
+  fi
+
+  temp_root="$(make_temp_root)"
+  fake_bin="$(setup_fake_bin)"
+  mount_dir="$(mktemp -d)"
+  file_path="$mount_dir/a.txt"
+  printf 'hello\n' >"$file_path"
+  chmod 700 "$mount_dir"
+  chmod 600 "$file_path"
+
+  make_stub "$fake_bin" "mountpoint" "if [[ \"\$1\" == '-q' && \"\$3\" == '$mount_dir' ]]; then exit 0; fi; exit 1"
+  make_stub "$fake_bin" "findmnt" "if [[ \"\$1\" == '-n' ]]; then echo '/dev/sdb1 ntfs3 rw,uid=1000'; exit 0; fi; exit 1"
+
+  set +e
+  output="$(PATH="$fake_bin:$PATH" unshare -Ur "$temp_root/bin/ntfs-perm-fix" apply "$mount_dir" 2>&1)"
+  status=$?
+  set -e
+
+  if [[ "$status" -ne 0 ]]; then
+    fail "apply should succeed for ntfs3 mountpoint"
+  fi
+
+  assert_contains "$output" "total_issues=0" "apply ntfs3 should repair issues"
+  assert_contains "$output" "text=" "apply ntfs3 report text path"
+  assert_contains "$output" "json=" "apply ntfs3 report json path"
+
+  text_report="$(extract_report_path "$output" "text")"
+  json_report="$(extract_report_path "$output" "json")"
+  [[ -f "$text_report" ]] || fail "apply should create text report for ntfs3"
+  [[ -f "$json_report" ]] || fail "apply should create json report for ntfs3"
+  [[ "$(stat -c '%a' "$mount_dir")" == "755" ]] || fail "apply should set directory mode to 755"
+  [[ "$(stat -c '%a' "$file_path")" == "644" ]] || fail "apply should set file mode to 644"
+
+  rm -rf "$temp_root" "$fake_bin" "$mount_dir"
+}
+
+test_apply_dry_run_success_path() {
+  local temp_root
+  local fake_bin
+  local mount_dir
+  local file_path
+  local output
+  local status
+
+  if ! command -v unshare >/dev/null 2>&1; then
+    echo "[SKIP] unshare not available, skip root-only apply tests"
+    return 0
+  fi
+
+  temp_root="$(make_temp_root)"
+  fake_bin="$(setup_fake_bin)"
+  mount_dir="$(mktemp -d)"
+  file_path="$mount_dir/a.txt"
+  printf 'hello\n' >"$file_path"
+  chmod 700 "$mount_dir"
+  chmod 600 "$file_path"
+
+  make_stub "$fake_bin" "mountpoint" "if [[ \"\$1\" == '-q' && \"\$3\" == '$mount_dir' ]]; then exit 0; fi; exit 1"
+  make_stub "$fake_bin" "findmnt" "if [[ \"\$1\" == '-n' ]]; then echo '/dev/sdb1 ntfs3 rw,uid=1000'; exit 0; fi; exit 1"
+
+  set +e
+  output="$(PATH="$fake_bin:$PATH" unshare -Ur "$temp_root/bin/ntfs-perm-fix" apply --dry-run "$mount_dir" 2>&1)"
+  status=$?
+  set -e
+
+  if [[ "$status" -ne 0 ]]; then
+    fail "apply --dry-run should succeed for ntfs3 mountpoint"
+  fi
+
+  assert_contains "$output" "dry-run" "apply --dry-run should mention dry-run mode"
+  [[ "$(stat -c '%a' "$mount_dir")" == "700" ]] || fail "apply --dry-run should not modify directory mode"
+  [[ "$(stat -c '%a' "$file_path")" == "600" ]] || fail "apply --dry-run should not modify file mode"
+
+  rm -rf "$temp_root" "$fake_bin" "$mount_dir"
 }
 
 test_config_missing_value
 test_check_missing_path
 test_check_not_mountpoint
 test_check_root_mountpoint
+test_apply_requires_root
+test_apply_rejects_non_ntfs_mountpoint
+test_apply_accepts_ntfs3_success_path
+test_apply_dry_run_success_path
 
 echo "[PASS] test_cli.sh"
