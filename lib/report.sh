@@ -42,15 +42,20 @@ write_report_files() {
   local target="$3"
   local status="$4"
   local stamp
+  local base_name
+  local reservation_file
   local text_file
   local json_file
 
   stamp="$(date '+%Y%m%dT%H%M%S')"
   mkdir -p "$output_dir"
 
-  text_file="$output_dir/report-$stamp.txt"
-  json_file="$output_dir/report-$stamp.json"
+  reservation_file="$(mktemp "$output_dir/report-$stamp-XXXXXX.tmp")"
+  base_name="${reservation_file%.tmp}"
+  text_file="$base_name.txt"
+  json_file="$base_name.json"
 
+  rm -f "$reservation_file"
   render_text_summary "$task_name" "$target" "$status" >"$text_file"
   render_json_summary "$task_name" "$target" "$status" >"$json_file"
 

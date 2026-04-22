@@ -40,6 +40,21 @@ run_check() {
   collect_mount_info "$mountpoint"
 }
 
+mount_info_value() {
+  local mount_info="$1"
+  local key="$2"
+  local line
+
+  while IFS= read -r line; do
+    if [[ "$line" == "$key="* ]]; then
+      printf '%s\n' "${line#"$key="}"
+      return 0
+    fi
+  done <<<"$mount_info"
+
+  return 1
+}
+
 run_plan() {
   local mountpoint="$1"
   local mount_info
@@ -50,8 +65,8 @@ run_plan() {
   local report_paths
 
   mount_info="$(run_check "$mountpoint")"
-  source_spec="$(printf '%s\n' "$mount_info" | awk -F= '/^source=/{print $2; exit}')"
-  raw_fs="$(printf '%s\n' "$mount_info" | awk -F= '/^fstype=/{print $2; exit}')"
+  source_spec="$(mount_info_value "$mount_info" "source")"
+  raw_fs="$(mount_info_value "$mount_info" "fstype")"
   recommended_driver="$(recommend_driver "$raw_fs")"
   fstab_line="$(build_fstab_line "$source_spec" "$mountpoint" "$recommended_driver" "1000" "1000" "0022")"
 
