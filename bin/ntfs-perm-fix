@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=../lib/common.sh
+source "$ROOT_DIR/lib/common.sh"
+# shellcheck source=../lib/detect.sh
+source "$ROOT_DIR/lib/detect.sh"
+
+config_path="$(default_config_path)"
+dry_run=""
+
+usage() {
+  cat <<USAGE
+Usage:
+  ntfs-perm-fix [--config <path>] [--dry-run]
+  ntfs-perm-fix check <mountpoint>
+USAGE
+}
+
+run_check() {
+  local mountpoint="$1"
+
+  if ! path_exists "$mountpoint"; then
+    log_error "path not found: $mountpoint"
+    return 1
+  fi
+
+  if ! is_mountpoint_path "$mountpoint"; then
+    log_error "not a mountpoint: $mountpoint"
+    return 1
+  fi
+
+  collect_mount_info "$mountpoint"
+}
+
+if [[ "${1:-}" == "check" ]]; then
+  shift
+
+  if [[ $# -lt 1 || -z "${1:-}" ]]; then
+    log_error "check requires a mountpoint"
+    usage
+    exit 1
+  fi
+
+  mountpoint="$1"
+  shift
+
+  if [[ $# -gt 0 ]]; then
+    log_error "unexpected argument for check: $1"
+    usage
+    exit 1
+  fi
+
+  run_check "$mountpoint"
+  exit $?
+fi
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --config)
+      if [[ $# -lt 2 || -z "${2:-}" ]]; then
+        log_error "--config requires a value"
+        usage
+        exit 1
+      fi
+      config_path="$2"
+      shift 2
+      ;;
+    --dry-run)
+      dry_run="true"
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      log_error "unknown argument: $1"
+      usage
+      exit 1
+      ;;
+  esac
+done
+
+log_info "config: $config_path"
+if [[ "$dry_run" == "true" ]]; then
+  log_warn "running in dry-run mode"
+fi
+
+echo "ntfs-perm-fix scaffold is ready"
