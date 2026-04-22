@@ -97,8 +97,14 @@ collect_mount_info() {
     return 1
   fi
 
+  source="${source:-unknown}"
+  raw_fs="${raw_fs:-unknown}"
+  opts="${opts:-}"
+
   normalized_fs="$(classify_fs "$raw_fs")"
+  normalized_fs="${normalized_fs:-unknown}"
   driver="$(classify_driver "$raw_fs" "$opts")"
+  driver="${driver:-unknown}"
 
   if issues_detected="$(scan_access_issues "$raw_fs" "$opts")"; then
     issues="$issues_detected"

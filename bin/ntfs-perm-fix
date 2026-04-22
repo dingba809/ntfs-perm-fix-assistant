@@ -29,6 +29,22 @@ USAGE
 
 run_check() {
   local mountpoint="$1"
+  local mount_info
+  local fs
+  local driver
+  local report_paths
+
+  mount_info="$(collect_checked_mount_info "$mountpoint")"
+  fs="$(mount_info_value "$mount_info" "filesystem" || mount_info_value "$mount_info" "fstype" || printf 'unknown\n')"
+  driver="$(mount_info_value "$mount_info" "driver" || printf 'unknown\n')"
+  report_paths="$(write_report_files "$ROOT_DIR/logs" "check" "$mountpoint" "ok" "$fs" "$driver")"
+
+  printf '%s\n' "$mount_info"
+  printf '%s\n' "$report_paths"
+}
+
+collect_checked_mount_info() {
+  local mountpoint="$1"
 
   if ! path_exists "$mountpoint"; then
     log_error "path not found: $mountpoint"
@@ -63,17 +79,21 @@ run_plan() {
   local mount_info
   local source_spec
   local raw_fs
+  local fs
+  local driver
   local recommended_driver
   local fstab_line
   local report_paths
 
-  mount_info="$(run_check "$mountpoint")"
+  mount_info="$(collect_checked_mount_info "$mountpoint")"
   source_spec="$(mount_info_value "$mount_info" "source")"
   raw_fs="$(mount_info_value "$mount_info" "fstype")"
+  fs="$(mount_info_value "$mount_info" "filesystem" || printf '%s\n' "$raw_fs")"
+  driver="$(mount_info_value "$mount_info" "driver" || printf 'unknown\n')"
   recommended_driver="$(recommend_driver "$raw_fs")"
   fstab_line="$(build_fstab_line "$source_spec" "$mountpoint" "$recommended_driver" "1000" "1000" "0022")"
 
-  report_paths="$(write_report_files "$ROOT_DIR/logs" "plan" "$mountpoint" "warning")"
+  report_paths="$(write_report_files "$ROOT_DIR/logs" "plan" "$mountpoint" "warning" "$fs" "$driver")"
 
   printf '%s\n' "$report_paths"
   printf '建议fstab: %s\n' "$fstab_line"
@@ -96,6 +116,7 @@ run_apply() {
   local mount_info
   local raw_fs
   local normalized_fs
+  local fs
   local driver
   local issue_counts
   local report_paths
@@ -105,19 +126,10 @@ run_apply() {
 
   require_root || return 1
 
-  if ! path_exists "$mountpoint"; then
-    log_error "path not found: $mountpoint"
-    return 1
-  fi
-
-  if ! is_mountpoint_path "$mountpoint"; then
-    log_error "not a mountpoint: $mountpoint"
-    return 1
-  fi
-
-  mount_info="$(collect_mount_info "$mountpoint")"
+  mount_info="$(collect_checked_mount_info "$mountpoint")"
   raw_fs="$(mount_info_value "$mount_info" "fstype")"
   normalized_fs="$(classify_fs "$raw_fs")"
+  fs="$(mount_info_value "$mount_info" "filesystem" || printf '%s\n' "$normalized_fs")"
   driver="$(mount_info_value "$mount_info" "driver" || true)"
 
   if [[ "$normalized_fs" != "ntfs" && "$raw_fs" != "ntfs3" && "$driver" != "ntfs3" ]]; then
@@ -136,7 +148,7 @@ run_apply() {
     fi
   fi
 
-  report_paths="$(write_report_files "$ROOT_DIR/logs" "apply" "$mountpoint" "$result_status")"
+  report_paths="$(write_report_files "$ROOT_DIR/logs" "apply" "$mountpoint" "$result_status" "$fs" "${driver:-unknown}" "result")"
   printf '%s\n' "$report_paths"
   printf '%s\n' "$issue_counts"
 }
@@ -257,6 +269,10 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+log_error "no command specified"
+usage
+exit 1
 
 log_info "config: $config_path"
 if [[ "$dry_run" == "true" ]]; then

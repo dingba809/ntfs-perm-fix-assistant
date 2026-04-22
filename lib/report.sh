@@ -15,11 +15,15 @@ render_text_summary() {
   local task_name="$1"
   local target="$2"
   local status="$3"
+  local fs="${4:-unknown}"
+  local driver="${5:-unknown}"
 
   cat <<TEXT
 任务: $task_name
 目标: $target
 状态: $status
+文件系统: $fs
+驱动: $driver
 时间: $(timestamp_now)
 TEXT
 }
@@ -28,11 +32,24 @@ render_json_summary() {
   local task_name="$1"
   local target="$2"
   local status="$3"
+  local fs="${4:-unknown}"
+  local driver="${5:-unknown}"
+  local status_key="${6:-status}"
 
-  printf '{"task":"%s","target":"%s","status":"%s","timestamp":"%s"}\n' \
+  case "$status_key" in
+    status|result) ;;
+    *)
+      status_key="status"
+      ;;
+  esac
+
+  printf '{"task":"%s","target":"%s","%s":"%s","fs":"%s","driver":"%s","timestamp":"%s"}\n' \
     "$(json_escape "$task_name")" \
     "$(json_escape "$target")" \
+    "$status_key" \
     "$(json_escape "$status")" \
+    "$(json_escape "$fs")" \
+    "$(json_escape "$driver")" \
     "$(json_escape "$(timestamp_now)")"
 }
 
@@ -41,6 +58,9 @@ write_report_files() {
   local task_name="$2"
   local target="$3"
   local status="$4"
+  local fs="${5:-unknown}"
+  local driver="${6:-unknown}"
+  local status_key="${7:-status}"
   local stamp
   local base_name
   local reservation_file
@@ -56,8 +76,8 @@ write_report_files() {
   json_file="$base_name.json"
 
   rm -f "$reservation_file"
-  render_text_summary "$task_name" "$target" "$status" >"$text_file"
-  render_json_summary "$task_name" "$target" "$status" >"$json_file"
+  render_text_summary "$task_name" "$target" "$status" "$fs" "$driver" >"$text_file"
+  render_json_summary "$task_name" "$target" "$status" "$fs" "$driver" "$status_key" >"$json_file"
 
   printf 'text=%s\njson=%s\n' "$text_file" "$json_file"
 }

@@ -18,6 +18,16 @@ assert_contains() {
   fi
 }
 
+assert_file_contains() {
+  local file_path="$1"
+  local pattern="$2"
+  local name="$3"
+  local content
+
+  content="$(cat "$file_path")"
+  assert_contains "$content" "$pattern" "$name"
+}
+
 make_temp_root() {
   local temp_root
   temp_root="$(mktemp -d)"
@@ -118,6 +128,7 @@ test_check_root_mountpoint() {
   local fake_bin
   local mount_dir
   local output
+  local json_report
 
   temp_root="$(make_temp_root)"
   fake_bin="$(setup_fake_bin)"
@@ -131,6 +142,14 @@ test_check_root_mountpoint() {
   if [[ "$output" != *"mountpoint=$mount_dir"* ]]; then
     fail "check should print mount info"
   fi
+  assert_contains "$output" "text=" "check report text path"
+  assert_contains "$output" "json=" "check report json path"
+
+  json_report="$(extract_report_path "$output" "json")"
+  [[ -f "$json_report" ]] || fail "check should create json report"
+  assert_file_contains "$json_report" '"task":"check"' "check json task"
+  assert_file_contains "$json_report" '"fs":"ntfs3"' "check json fs"
+  assert_file_contains "$json_report" '"driver":"ntfs3"' "check json driver"
 
   rm -rf "$temp_root" "$fake_bin" "$mount_dir"
 }
@@ -149,6 +168,32 @@ test_apply_requires_root() {
   fi
 
   assert_contains "$output" "must be run as root" "apply root requirement"
+}
+
+test_plan_report_contains_fs_and_driver() {
+  local temp_root
+  local fake_bin
+  local mount_dir
+  local output
+  local json_report
+
+  temp_root="$(make_temp_root)"
+  fake_bin="$(setup_fake_bin)"
+  mount_dir="$(mktemp -d)"
+
+  make_stub "$fake_bin" "mountpoint" "if [[ \"\$1\" == '-q' && \"\$3\" == '$mount_dir' ]]; then exit 0; fi; exit 1"
+  make_stub "$fake_bin" "findmnt" "if [[ \"\$1\" == '-n' ]]; then echo '/dev/sdb1 ntfs3 rw,uid=1000'; exit 0; fi; exit 1"
+
+  output="$(PATH="$fake_bin:$PATH" "$temp_root/bin/ntfs-perm-fix" plan "$mount_dir")"
+  assert_contains "$output" "json=" "plan report json path"
+  json_report="$(extract_report_path "$output" "json")"
+  [[ -f "$json_report" ]] || fail "plan should create json report"
+  assert_file_contains "$json_report" '"task":"plan"' "plan json task"
+  assert_file_contains "$json_report" '"status":"warning"' "plan json status"
+  assert_file_contains "$json_report" '"fs":"ntfs3"' "plan json fs"
+  assert_file_contains "$json_report" '"driver":"ntfs3"' "plan json driver"
+
+  rm -rf "$temp_root" "$fake_bin" "$mount_dir"
 }
 
 test_apply_rejects_non_ntfs_mountpoint() {
@@ -229,6 +274,10 @@ test_apply_accepts_ntfs3_success_path() {
   json_report="$(extract_report_path "$output" "json")"
   [[ -f "$text_report" ]] || fail "apply should create text report for ntfs3"
   [[ -f "$json_report" ]] || fail "apply should create json report for ntfs3"
+  assert_file_contains "$json_report" '"task":"apply"' "apply json task"
+  assert_file_contains "$json_report" '"result":"success"' "apply json result"
+  assert_file_contains "$json_report" '"fs":"ntfs3"' "apply json fs"
+  assert_file_contains "$json_report" '"driver":"ntfs3"' "apply json driver"
   [[ "$(stat -c '%a' "$mount_dir")" == "755" ]] || fail "apply should set directory mode to 755"
   [[ "$(stat -c '%a' "$file_path")" == "644" ]] || fail "apply should set file mode to 644"
 
@@ -280,6 +329,7 @@ test_check_missing_path
 test_check_not_mountpoint
 test_check_root_mountpoint
 test_apply_requires_root
+test_plan_report_contains_fs_and_driver
 test_apply_rejects_non_ntfs_mountpoint
 test_apply_accepts_ntfs3_success_path
 test_apply_dry_run_success_path
