@@ -85,6 +85,7 @@ collect_mount_info() {
   local normalized_fs=""
   local driver=""
   local issues="none"
+  local issues_detected=""
 
   if ! command -v findmnt >/dev/null 2>&1; then
     echo "findmnt command not found" >&2
