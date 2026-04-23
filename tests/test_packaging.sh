@@ -43,6 +43,32 @@ test_build_single_file_creates_executable() {
   [[ "$smoke_output" == *"Usage:"* ]] || fail "copied artifact --help should print usage"
 }
 
+test_build_single_file_uses_self_root_after_copy() {
+  local dist_dir="$ROOT_DIR/dist"
+  local artifact="$ROOT_DIR/dist/ntfs-perm-fix"
+  local temp_dir
+  local copied_artifact
+  local report_output
+  local report_status
+
+  rm -rf "$dist_dir"
+  temp_dir="$(mktemp -d)"
+  trap 'rm -rf "$dist_dir" "$temp_dir"' RETURN
+
+  bash "$ROOT_DIR/scripts/build-single-file.sh"
+
+  copied_artifact="$temp_dir/ntfs-perm-fix"
+  cp "$artifact" "$copied_artifact"
+  chmod +x "$copied_artifact"
+
+  set +e
+  report_output="$("$copied_artifact" report 2>&1)"
+  report_status=$?
+  set -e
+  [[ "$report_status" -ne 0 ]] || fail "copied artifact report should fail when no report exists"
+  [[ "$report_output" == *"no report found in $temp_dir/logs"* ]] || fail "copied artifact should use its own directory as runtime root"
+}
+
 test_build_single_file_inlines_modules() {
   local dist_dir="$ROOT_DIR/dist"
   local artifact="$ROOT_DIR/dist/ntfs-perm-fix"
@@ -108,6 +134,7 @@ EOF
 
 test_build_single_file_inlines_modules
 test_build_single_file_creates_executable
+test_build_single_file_uses_self_root_after_copy
 test_build_single_file_uses_entrypoint_source_order
 
 echo "[PASS] test_packaging.sh"

@@ -40,6 +40,7 @@ strip_entrypoint_content() {
   awk '
     NR == 1 && /^#!\/usr\/bin\/env bash$/ { next }
     /^set -euo pipefail$/ { next }
+    /^ROOT_DIR=/ { next }
     /^# shellcheck source=\.\.\/lib\// { next }
     /^source "\$ROOT_DIR\/lib\// { next }
     { print }
@@ -65,6 +66,14 @@ strip_entrypoint_content() {
     strip_module_content "$module_file"
     echo
   done
+
+  cat <<'SHIM'
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+project_root() {
+  cd "$(dirname "${BASH_SOURCE[0]}")" && pwd
+}
+
+SHIM
 
   strip_entrypoint_content "$ENTRYPOINT"
 } > "$ARTIFACT"
