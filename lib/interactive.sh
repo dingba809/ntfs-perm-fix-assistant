@@ -4,17 +4,36 @@ interactive_print_main_menu() {
   cat <<'MENU'
 === NTFS 权限修复助手主菜单 ===
 1) 扫描 NTFS 挂载点
-2) 功能说明
+2) 查看最近报告
+3) 功能说明
 0) 退出
 MENU
 }
 
 interactive_show_help() {
   cat <<'HELP'
-这是交互模式骨架。
-- 输入 2 查看帮助说明
-- 输入 0 退出程序
+使用建议（面向初级维护人员）：
+1. 先扫描 NTFS 挂载点，确认你要处理的目标盘。
+2. 进入目标盘菜单后，优先选择“自动诊断”，先看风险结论。
+3. 如需留档，可先“生成修复建议”或“执行 dry-run”。
+4. 确认无误后再执行“安全修复”，并按提示二次确认。
+5. 若要回看结果，可在主菜单使用“查看最近报告”。
 HELP
+}
+
+interactive_show_recent_report() {
+  if ! declare -F run_report >/dev/null 2>&1; then
+    echo "run_report is not available" >&2
+    printf '暂无可查看的报告，请先执行扫描或诊断流程。\n'
+    return 1
+  fi
+
+  if ! run_report; then
+    printf '暂无可查看的报告，请先执行扫描或诊断流程。\n'
+    return 1
+  fi
+
+  return 0
 }
 
 interactive_mount_info_value() {
@@ -380,6 +399,11 @@ interactive_main_menu() {
         fi
         ;;
       2)
+        if ! interactive_show_recent_report; then
+          :
+        fi
+        ;;
+      3)
         interactive_show_help
         ;;
       0)

@@ -174,17 +174,55 @@ test_help_option_then_exit() {
   local status
 
   set +e
-  output="$(run_interactive_menu $'2\n0\n')"
+  output="$(run_interactive_menu $'3\n0\n')"
   status=$?
   set -e
 
   if [[ "$status" -ne 0 ]]; then
-    fail "interactive_main_menu should exit successfully for input sequence 2,0"
+    fail "interactive_main_menu should exit successfully for input sequence 3,0"
   fi
 
   assert_contains "$output" "主菜单" "main menu should be shown"
-  assert_contains "$output" "这是交互模式骨架" "input 2 should show help content"
+  assert_contains "$output" "先扫描 NTFS 挂载点" "help should guide beginner with first step"
+  assert_contains "$output" "自动诊断" "help should mention diagnosis capability"
   assert_contains "$output" "已退出。" "input 0 should exit"
+}
+
+test_main_menu_has_recent_report_entry() {
+  local output
+  output="$(bash -c "source '$INTERACTIVE_LIB'; interactive_print_main_menu")"
+
+  assert_contains "$output" "2) 查看最近报告" "main menu should include recent report entry"
+  assert_contains "$output" "3) 功能说明" "main menu should keep help entry"
+}
+
+test_recent_report_entry_calls_run_report() {
+  local output
+  local status
+
+  set +e
+  output="$(printf '2\n0\n' | bash -c "set -euo pipefail; source '$INTERACTIVE_LIB'; run_report(){ printf 'REPORT:OK\n'; }; interactive_main_menu" 2>&1)"
+  status=$?
+  set -e
+
+  [[ "$status" -eq 0 ]] || fail "recent report entry should keep interactive menu recoverable"
+  assert_contains "$output" "REPORT:OK" "recent report entry should call run_report"
+  assert_contains "$output" "已退出。" "recent report flow should still allow exit"
+}
+
+test_recent_report_missing_is_friendly_under_strict_mode() {
+  local output
+  local status
+
+  set +e
+  output="$(printf '2\n0\n' | bash -c "set -euo pipefail; source '$INTERACTIVE_LIB'; run_report(){ echo 'no report found in logs' >&2; return 1; }; interactive_main_menu" 2>&1)"
+  status=$?
+  set -e
+
+  [[ "$status" -eq 0 ]] || fail "missing report should not crash interactive menu under strict mode"
+  assert_contains "$output" "no report found in logs" "recent report failure details should be preserved"
+  assert_contains "$output" "暂无可查看的报告" "missing report should show friendly hint"
+  assert_contains "$output" "已退出。" "missing report flow should still allow exit"
 }
 
 test_invalid_input_prompts_and_loops_then_exit() {
@@ -385,6 +423,9 @@ test_select_mountpoint_keeps_scan_error_semantics
 test_scan_menu_lists_numbered_mountpoints_then_back_to_menu
 test_select_mountpoint_returns_selected_value_and_confirms_in_menu
 test_help_option_then_exit
+test_main_menu_has_recent_report_entry
+test_recent_report_entry_calls_run_report
+test_recent_report_missing_is_friendly_under_strict_mode
 test_invalid_input_prompts_and_loops_then_exit
 test_eof_exits_stably
 test_diagnosis_recommends_safe_fix_for_rw_ntfs
