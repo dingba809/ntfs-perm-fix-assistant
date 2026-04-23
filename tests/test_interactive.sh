@@ -248,7 +248,7 @@ test_select_mountpoint_enters_target_menu_and_runs_diagnosis() {
   assert_contains "$output" "诊断结论" "diagnosis output should be shown"
   assert_contains "$output" "推荐操作" "diagnosis recommendation should be shown"
   assert_contains "$output" "请选择推荐操作" "diagnosis should enter recommendation menu state"
-  assert_contains "$output" "已选择：先执行 dry-run（占位）" "diagnosis menu should handle option 2"
+  assert_contains "$output" "dry-run 未执行或执行失败。" "diagnosis menu should handle option 2"
   assert_not_contains "$output" "该功能将在后续任务中实现。" "diagnosis option should not fall back to target menu handler"
 
   rm -rf "$fake_bin"
@@ -274,6 +274,64 @@ test_assess_risk_returns_medium_for_access_issue() {
   [[ "$result" == "medium|read-write-access-warning" ]] || fail "mount with access issues should be medium risk"
 }
 
+test_interactive_confirm_action_cancel_on_n() {
+  local output
+  local status
+
+  set +e
+  output="$(printf 'n\n' | bash -c "source '$INTERACTIVE_LIB'; interactive_confirm_action '执行安全修复'" 2>&1)"
+  status=$?
+  set -e
+
+  [[ "$status" -ne 0 ]] || fail "interactive_confirm_action should return non-zero when user rejects"
+  assert_contains "$output" "是否继续" "interactive_confirm_action should prompt for confirmation"
+}
+
+test_target_menu_option_2_shows_detailed_info() {
+  local output
+  local status
+
+  set +e
+  output="$(printf '2\n0\n' | bash -c "source '$INTERACTIVE_LIB'; collect_checked_mount_info(){ printf 'mountpoint=%s\nfstype=ntfs3\n' \"\$1\"; }; interactive_target_menu '/mnt/data'" 2>&1)"
+  status=$?
+  set -e
+
+  [[ "$status" -eq 0 ]] || fail "target menu option 2 should return successfully"
+  assert_contains "$output" "mountpoint=/mnt/data" "target menu option 2 should call collect_checked_mount_info"
+}
+
+test_target_menu_option_3_generates_plan() {
+  local output
+  local status
+
+  set +e
+  output="$(printf '3\n0\n' | bash -c "source '$INTERACTIVE_LIB'; run_plan(){ printf 'PLAN:%s\n' \"\$1\"; }; interactive_target_menu '/mnt/data'" 2>&1)"
+  status=$?
+  set -e
+
+  [[ "$status" -eq 0 ]] || fail "target menu option 3 should return successfully"
+  assert_contains "$output" "PLAN:/mnt/data" "target menu option 3 should call run_plan"
+}
+
+test_interactive_safe_fix_and_dry_run_call_run_apply() {
+  local output_fix
+  local output_dry
+  local status_fix
+  local status_dry
+
+  set +e
+  output_fix="$(printf 'y\n' | bash -c "source '$INTERACTIVE_LIB'; dry_run=''; run_apply(){ printf 'APPLY:%s dry_run=%s\n' \"\$1\" \"\${dry_run:-}\"; }; interactive_safe_fix '/mnt/data'" 2>&1)"
+  status_fix=$?
+  output_dry="$(printf 'y\n' | bash -c "source '$INTERACTIVE_LIB'; dry_run=''; run_apply(){ printf 'APPLY:%s dry_run=%s\n' \"\$1\" \"\${dry_run:-}\"; }; interactive_safe_dry_run '/mnt/data'" 2>&1)"
+  status_dry=$?
+  set -e
+
+  [[ "$status_fix" -eq 0 ]] || fail "interactive_safe_fix should succeed after confirmation"
+  [[ "$status_dry" -eq 0 ]] || fail "interactive_safe_dry_run should succeed after confirmation"
+  assert_contains "$output_fix" "APPLY:/mnt/data dry_run=" "interactive_safe_fix should call run_apply without dry_run"
+  assert_contains "$output_dry" "APPLY:/mnt/data dry_run=true" "interactive_safe_dry_run should call run_apply with dry_run=true"
+}
+
 test_scan_lists_ntfs_mountpoints
 test_scan_mountpoints_findmnt_failure_returns_error
 test_select_mountpoint_keeps_scan_error_semantics
@@ -286,5 +344,9 @@ test_diagnosis_recommends_safe_fix_for_rw_ntfs
 test_select_mountpoint_enters_target_menu_and_runs_diagnosis
 test_assess_risk_returns_high_for_read_only_mount
 test_assess_risk_returns_medium_for_access_issue
+test_interactive_confirm_action_cancel_on_n
+test_target_menu_option_2_shows_detailed_info
+test_target_menu_option_3_generates_plan
+test_interactive_safe_fix_and_dry_run_call_run_apply
 
 echo "[PASS] test_interactive.sh"

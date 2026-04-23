@@ -111,6 +111,98 @@ interactive_render_target_menu() {
 MENU
 }
 
+interactive_confirm_action() {
+  local action_label="${1:-执行该操作}"
+  local choice=""
+
+  printf '%s，是否继续？[y/N]: ' "$action_label"
+  if ! IFS= read -r choice; then
+    printf '已取消。\n'
+    return 1
+  fi
+
+  case "$choice" in
+    y|Y|yes|YES)
+      return 0
+      ;;
+    *)
+      printf '已取消。\n'
+      return 1
+      ;;
+  esac
+}
+
+interactive_restore_dry_run() {
+  local had_value="${1:-false}"
+  local previous_value="${2:-}"
+
+  if [[ "$had_value" == "true" ]]; then
+    dry_run="$previous_value"
+  else
+    unset dry_run
+  fi
+}
+
+interactive_safe_fix() {
+  local target="${1:-}"
+  local had_dry_run="false"
+  local previous_dry_run=""
+  local status=0
+
+  if ! declare -F run_apply >/dev/null 2>&1; then
+    echo "run_apply is not available" >&2
+    return 1
+  fi
+
+  if [[ "${dry_run+x}" == "x" ]]; then
+    had_dry_run="true"
+    previous_dry_run="$dry_run"
+  fi
+
+  if ! interactive_confirm_action "即将执行安全修复：$target"; then
+    return 1
+  fi
+
+  dry_run=""
+  if run_apply "$target"; then
+    status=0
+  else
+    status=$?
+  fi
+  interactive_restore_dry_run "$had_dry_run" "$previous_dry_run"
+  return "$status"
+}
+
+interactive_safe_dry_run() {
+  local target="${1:-}"
+  local had_dry_run="false"
+  local previous_dry_run=""
+  local status=0
+
+  if ! declare -F run_apply >/dev/null 2>&1; then
+    echo "run_apply is not available" >&2
+    return 1
+  fi
+
+  if [[ "${dry_run+x}" == "x" ]]; then
+    had_dry_run="true"
+    previous_dry_run="$dry_run"
+  fi
+
+  if ! interactive_confirm_action "即将执行 dry-run：$target"; then
+    return 1
+  fi
+
+  dry_run="true"
+  if run_apply "$target"; then
+    status=0
+  else
+    status=$?
+  fi
+  interactive_restore_dry_run "$had_dry_run" "$previous_dry_run"
+  return "$status"
+}
+
 interactive_assess_risk() {
   local mount_info="${1:-}"
   local options=""
@@ -179,13 +271,21 @@ interactive_run_diagnosis() {
 
     case "$diagnosis_choice" in
       1)
-        printf '已选择：执行安全修复（占位）\n'
+        if ! interactive_safe_fix "$target"; then
+          printf '安全修复未执行或执行失败。\n'
+        fi
         ;;
       2)
-        printf '已选择：先执行 dry-run（占位）\n'
+        if ! interactive_safe_dry_run "$target"; then
+          printf 'dry-run 未执行或执行失败。\n'
+        fi
         ;;
       3)
-        printf '已选择：查看详细报告（占位）\n'
+        if ! declare -F collect_checked_mount_info >/dev/null 2>&1; then
+          echo "collect_checked_mount_info is not available" >&2
+        else
+          collect_checked_mount_info "$target"
+        fi
         ;;
       0)
         return 0
@@ -212,8 +312,29 @@ interactive_target_menu() {
       1)
         interactive_run_diagnosis "$target"
         ;;
-      2|3|4|5)
-        printf '该功能将在后续任务中实现。\n'
+      2)
+        if ! declare -F collect_checked_mount_info >/dev/null 2>&1; then
+          echo "collect_checked_mount_info is not available" >&2
+        else
+          collect_checked_mount_info "$target"
+        fi
+        ;;
+      3)
+        if ! declare -F run_plan >/dev/null 2>&1; then
+          echo "run_plan is not available" >&2
+        else
+          run_plan "$target"
+        fi
+        ;;
+      4)
+        if ! interactive_safe_fix "$target"; then
+          printf '安全修复未执行或执行失败。\n'
+        fi
+        ;;
+      5)
+        if ! interactive_safe_dry_run "$target"; then
+          printf 'dry-run 未执行或执行失败。\n'
+        fi
         ;;
       0)
         return 0
