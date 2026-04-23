@@ -210,6 +210,37 @@ test_eof_exits_stably() {
   assert_contains "$output" "主菜单" "EOF path should still render menu once"
 }
 
+test_diagnosis_recommends_safe_fix_for_rw_ntfs() {
+  local output
+  output="$(bash -c "source '$INTERACTIVE_LIB'; interactive_render_diagnosis_menu /mnt/data ntfs3 rw read-write-access-warning")"
+
+  assert_contains "$output" "诊断结论" "diagnosis title"
+  assert_contains "$output" "推荐操作" "diagnosis recommendation"
+  assert_contains "$output" "执行安全修复（推荐）" "diagnosis safe fix recommendation"
+}
+
+test_select_mountpoint_enters_target_menu_and_runs_diagnosis() {
+  local fake_bin
+  local output
+  local status
+
+  fake_bin="$(setup_fake_bin)"
+  make_stub "$fake_bin" "findmnt" 'if [[ "$1" == "-rn" ]]; then printf "/dev/sdb1 /mnt/data ntfs3 rw\n"; exit 0; fi; if [[ "$1" == "-n" ]]; then printf "/dev/sdb1 ntfs3 rw\n"; exit 0; fi; exit 1'
+
+  set +e
+  output="$(PATH="$fake_bin:$PATH" run_interactive_menu $'1\n1\n1\n0\n0\n')"
+  status=$?
+  set -e
+
+  [[ "$status" -eq 0 ]] || fail "interactive target menu flow should exit successfully"
+  assert_contains "$output" "当前目标：/mnt/data" "target menu should render selected mountpoint"
+  assert_contains "$output" "自动诊断（推荐）" "target menu should provide diagnosis option"
+  assert_contains "$output" "诊断结论" "diagnosis output should be shown"
+  assert_contains "$output" "推荐操作" "diagnosis recommendation should be shown"
+
+  rm -rf "$fake_bin"
+}
+
 test_scan_lists_ntfs_mountpoints
 test_scan_mountpoints_findmnt_failure_returns_error
 test_select_mountpoint_keeps_scan_error_semantics
@@ -218,5 +249,7 @@ test_select_mountpoint_returns_selected_value_and_confirms_in_menu
 test_help_option_then_exit
 test_invalid_input_prompts_and_loops_then_exit
 test_eof_exits_stably
+test_diagnosis_recommends_safe_fix_for_rw_ntfs
+test_select_mountpoint_enters_target_menu_and_runs_diagnosis
 
 echo "[PASS] test_interactive.sh"

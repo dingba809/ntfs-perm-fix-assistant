@@ -17,6 +17,20 @@ interactive_show_help() {
 HELP
 }
 
+interactive_mount_info_value() {
+  local mount_info="${1:-}"
+  local key="${2:-}"
+  local line=""
+
+  while IFS= read -r line; do
+    [[ "$line" == "$key="* ]] || continue
+    printf '%s\n' "${line#*=}"
+    return 0
+  done <<<"$mount_info"
+
+  return 1
+}
+
 interactive_scan_mountpoints() {
   if ! declare -F list_ntfs_mountpoints >/dev/null 2>&1; then
     echo "list_ntfs_mountpoints is not available" >&2
@@ -82,6 +96,110 @@ interactive_select_mountpoint() {
   printf '%s\n' "$target"
 }
 
+interactive_render_target_menu() {
+  local target="${1:-}"
+
+  cat <<MENU
+当前目标：$target
+
+[1] 自动诊断（推荐）
+[2] 查看详细信息
+[3] 生成修复建议
+[4] 执行安全修复
+[5] 执行 dry-run
+[0] 返回上一级
+MENU
+}
+
+interactive_assess_risk() {
+  local mount_info="${1:-}"
+  local options=""
+  local _driver=""
+  local issues=""
+
+  options="$(interactive_mount_info_value "$mount_info" "options" || printf '')"
+  _driver="$(interactive_mount_info_value "$mount_info" "driver" || printf 'unknown')"
+  issues="$(interactive_mount_info_value "$mount_info" "access_issues" || printf 'none')"
+
+  if [[ ",$options," == *,ro,* ]]; then
+    printf 'high|read-only-access-warning\n'
+  elif [[ "$issues" != "none" ]]; then
+    printf 'medium|read-write-access-warning\n'
+  else
+    printf 'low|no-obvious-access-issue\n'
+  fi
+}
+
+interactive_render_diagnosis_menu() {
+  local target="${1:-}"
+  local fs="${2:-unknown}"
+  local mount_mode="${3:-unknown}"
+  local summary="${4:-unknown}"
+
+  cat <<MENU
+诊断结论：
+- 目标挂载点：$target
+- 文件系统：$fs
+- 挂载状态：$mount_mode
+- 结论：$summary
+
+推荐操作：
+[1] 执行安全修复（推荐）
+[2] 先执行 dry-run
+[3] 查看详细报告
+[0] 返回
+MENU
+}
+
+interactive_run_diagnosis() {
+  local target="${1:-}"
+  local mount_info=""
+  local fs=""
+  local options=""
+  local _risk_level=""
+  local summary=""
+
+  if ! declare -F collect_mount_info >/dev/null 2>&1; then
+    echo "collect_mount_info is not available" >&2
+    return 1
+  fi
+
+  mount_info="$(collect_mount_info "$target")" || return 1
+  fs="$(interactive_mount_info_value "$mount_info" "fstype" || printf 'unknown')"
+  options="$(interactive_mount_info_value "$mount_info" "options" || printf 'unknown')"
+  IFS='|' read -r _risk_level summary <<<"$(interactive_assess_risk "$mount_info")"
+
+  interactive_render_diagnosis_menu "$target" "$fs" "$options" "$summary"
+}
+
+interactive_target_menu() {
+  local target="${1:-}"
+  local choice=""
+
+  while true; do
+    interactive_render_target_menu "$target"
+    printf '请选择操作: '
+    if ! IFS= read -r choice; then
+      return 0
+    fi
+
+    case "$choice" in
+      1)
+        interactive_run_diagnosis "$target"
+        ;;
+      2|3|4|5)
+        printf '该功能将在后续任务中实现。\n'
+        ;;
+      0)
+        return 0
+        ;;
+      *)
+        printf '无效选择，请重试。\n'
+        ;;
+    esac
+  done
+}
+
 interactive_main_menu() {
   local choice=""
   local selected_mountpoint=""
@@ -97,6 +215,7 @@ interactive_main_menu() {
       1)
         if selected_mountpoint="$(interactive_select_mountpoint)"; then
           printf '已选择挂载点: %s\n' "$selected_mountpoint"
+          interactive_target_menu "$selected_mountpoint"
         fi
         ;;
       2)
