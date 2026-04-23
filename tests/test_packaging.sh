@@ -36,6 +36,21 @@ test_build_single_file_creates_executable() {
   [[ "$smoke_output" != *"exec format error"* ]] || fail "artifact execution should not report exec format error"
 }
 
+test_build_single_file_inlines_modules() {
+  local dist_dir="$ROOT_DIR/dist"
+  local artifact="$ROOT_DIR/dist/ntfs-perm-fix"
+
+  rm -rf "$dist_dir"
+  trap 'rm -rf "$dist_dir"' RETURN
+
+  bash "$ROOT_DIR/scripts/build-single-file.sh"
+
+  grep -q "interactive_main_menu()" "$artifact" || fail "artifact should inline interactive_main_menu() definition"
+  grep -q "collect_mount_info()" "$artifact" || fail "artifact should inline collect_mount_info() definition"
+  grep -q "write_report_files()" "$artifact" || fail "artifact should inline write_report_files() definition"
+}
+
+test_build_single_file_inlines_modules
 test_build_single_file_creates_executable
 
 echo "[PASS] test_packaging.sh"
