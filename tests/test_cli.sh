@@ -84,6 +84,22 @@ test_config_missing_value() {
   fi
 }
 
+test_no_args_enters_interactive_mode() {
+  local output
+  local status
+
+  set +e
+  output="$(printf '0\n' | "$ROOT_DIR/bin/ntfs-perm-fix" 2>&1)"
+  status=$?
+  set -e
+
+  if [[ "$status" -ne 0 ]]; then
+    fail "running without args should enter interactive mode and exit 0"
+  fi
+
+  assert_contains "$output" "主菜单" "interactive main menu is shown"
+}
+
 test_check_missing_path() {
   local output
   local status
@@ -324,6 +340,7 @@ test_apply_dry_run_success_path() {
   rm -rf "$temp_root" "$fake_bin" "$mount_dir"
 }
 
+test_no_args_enters_interactive_mode
 test_config_missing_value
 test_check_missing_path
 test_check_not_mountpoint
