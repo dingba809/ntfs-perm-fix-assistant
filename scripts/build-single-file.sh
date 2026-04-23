@@ -5,14 +5,6 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist"
 ARTIFACT="$DIST_DIR/ntfs-perm-fix"
 ENTRYPOINT="$ROOT_DIR/bin/ntfs-perm-fix"
-MODULE_FILES=(
-  "$ROOT_DIR/lib/common.sh"
-  "$ROOT_DIR/lib/interactive.sh"
-  "$ROOT_DIR/lib/detect.sh"
-  "$ROOT_DIR/lib/mount_fix.sh"
-  "$ROOT_DIR/lib/tree_fix.sh"
-  "$ROOT_DIR/lib/report.sh"
-)
 
 mkdir -p "$DIST_DIR"
 
@@ -20,6 +12,16 @@ if [[ ! -f "$ENTRYPOINT" ]]; then
   echo "[ERROR] entrypoint not found: $ENTRYPOINT" >&2
   exit 1
 fi
+
+collect_module_files() {
+  local entrypoint_path="$1"
+
+  awk -v root_dir="$ROOT_DIR" '
+    match($0, /^[[:space:]]*source[[:space:]]+"\$ROOT_DIR\/lib\/([^"]+\.sh)"/, m) {
+      print root_dir "/lib/" m[1]
+    }
+  ' "$entrypoint_path"
+}
 
 strip_module_content() {
   local file_path="$1"
@@ -45,11 +47,17 @@ strip_entrypoint_content() {
 }
 
 {
+  mapfile -t module_files < <(collect_module_files "$ENTRYPOINT")
+  if [[ "${#module_files[@]}" -eq 0 ]]; then
+    echo "[ERROR] no source \"\$ROOT_DIR/lib/*.sh\" entries found in entrypoint: $ENTRYPOINT" >&2
+    exit 1
+  fi
+
   echo "#!/usr/bin/env bash"
   echo "set -euo pipefail"
   echo
 
-  for module_file in "${MODULE_FILES[@]}"; do
+  for module_file in "${module_files[@]}"; do
     if [[ ! -f "$module_file" ]]; then
       echo "[ERROR] module not found: $module_file" >&2
       exit 1
