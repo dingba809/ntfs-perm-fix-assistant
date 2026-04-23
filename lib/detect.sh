@@ -83,10 +83,23 @@ list_ntfs_mountpoints() {
   local fstype=""
   local options=""
   local normalized_fs=""
+  local findmnt_output=""
+  local scan_status=0
 
   if ! command -v findmnt >/dev/null 2>&1; then
     echo "findmnt command not found" >&2
     return 1
+  fi
+
+  findmnt_output="$(findmnt -rn -o SOURCE,TARGET,FSTYPE,OPTIONS 2>&1)"
+  scan_status=$?
+  if [[ "$scan_status" -ne 0 ]]; then
+    if [[ -n "$findmnt_output" ]]; then
+      printf 'failed to scan NTFS mountpoints: %s\n' "$findmnt_output" >&2
+    else
+      printf 'failed to scan NTFS mountpoints\n' >&2
+    fi
+    return "$scan_status"
   fi
 
   while read -r source target fstype options; do
@@ -95,7 +108,7 @@ list_ntfs_mountpoints() {
     if [[ "$normalized_fs" == "ntfs" || "$fstype" == "ntfs3" ]]; then
       printf '%s|%s|%s|%s\n' "$source" "$target" "$fstype" "$options"
     fi
-  done < <(findmnt -rn -o SOURCE,TARGET,FSTYPE,OPTIONS)
+  done <<<"$findmnt_output"
 }
 
 collect_mount_info() {

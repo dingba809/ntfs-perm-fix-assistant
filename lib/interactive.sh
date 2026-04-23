@@ -12,7 +12,7 @@ MENU
 interactive_show_help() {
   cat <<'HELP'
 这是交互模式骨架。
-- 输入 1 查看帮助说明
+- 输入 2 查看帮助说明
 - 输入 0 退出程序
 HELP
 }
@@ -34,11 +34,19 @@ interactive_select_mountpoint() {
   local target=""
   local fstype=""
   local options=""
+  local scan_output=""
+  local scan_status=0
+
+  scan_output="$(interactive_scan_mountpoints)"
+  scan_status=$?
+  if [[ "$scan_status" -ne 0 ]]; then
+    return "$scan_status"
+  fi
 
   while IFS= read -r line; do
     [[ -n "$line" ]] || continue
     entries+=("$line")
-  done < <(interactive_scan_mountpoints)
+  done <<<"$scan_output"
 
   if [[ "${#entries[@]}" -eq 0 ]]; then
     printf '未检测到可处理的 NTFS 挂载点。\n' >&2
