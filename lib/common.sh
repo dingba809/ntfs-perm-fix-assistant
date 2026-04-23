@@ -68,55 +68,39 @@ yaml_get() {
     return 1
   }
 
-  awk -v path="$key_path" '
-    BEGIN {
-      n = split(path, parts, ".")
-    }
+  awk -v want_key="$key_path" '
+    /^[[:space:]]*#/ || /^[[:space:]]*$/ { next }
     {
-      if ($0 ~ /^[[:space:]]*#/ || $0 ~ /^[[:space:]]*$/) {
+      line = $0
+      sub(/^[[:space:]]+/, "", line)
+
+      sep = index(line, ":")
+      if (sep == 0) {
         next
       }
-      if (match($0, /^([[:space:]]*)([A-Za-z0-9_.-]+):[[:space:]]*(.*)$/, m)) {
-        indent = length(m[1])
-        level = int(indent / 2) + 1
-        key = m[2]
-        value = m[3]
 
-        stack[level] = key
-        for (i = level + 1; i <= 32; i++) {
-          delete stack[i]
-        }
-
-        if (value == "") {
-          next
-        }
-
-        ok = 1
-        if (level != n) {
-          ok = 0
-        } else {
-          for (i = 1; i <= n; i++) {
-            if (stack[i] != parts[i]) {
-              ok = 0
-              break
-            }
-          }
-        }
-
-        if (ok) {
-          gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
-          if ((value ~ /^\".*\"$/) || (value ~ /^\047.*\047$/)) {
-            value = substr(value, 2, length(value) - 2)
-          }
-          print value
-          exit 0
-        }
+      key = substr(line, 1, sep - 1)
+      gsub(/[[:space:]]+$/, "", key)
+      if (key != want_key) {
+        next
       }
+
+      value = substr(line, sep + 1)
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+
+      if ((value ~ /^".*"$/) || (value ~ /^\047.*\047$/)) {
+        value = substr(value, 2, length(value) - 2)
+      }
+
+      print value
+      found = 1
+      exit
     }
     END {
-      if (NR > 0) {
-        exit 1
+      if (found) {
+        exit 0
       }
+      exit 1
     }
   ' "$file"
 }

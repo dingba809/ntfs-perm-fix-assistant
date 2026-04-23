@@ -1,13 +1,18 @@
-ntfs:
-  mount_point: /mnt/your-ntfs-disk
-  owner: 1000:1000
-  dir_mode: "0775"
-  file_mode: "0664"
-
-execution:
-  dry_run: false
-  recursive: true
-
-logging:
-  level: info
-  with_timestamp: true
+scan_mode: deep
+report_dir: ./reports
+mount_fix.enabled: true
+mount_fix.suggest_only: false
+mount_fix.prefer_driver: ntfs3
+mount_fix.uid: 1000
+mount_fix.gid: 1000
+mount_fix.file_mode: "0664"
+mount_fix.dir_mode: "0775"
+mount_fix.umask: "0022"
+tree_fix.enabled: true
+tree_fix.apply_chmod: true
+tree_fix.apply_chown: true
+tree_fix.dir_mode: "0775"
+tree_fix.file_mode: "0664"
+safety.require_root_for_apply: true
+safety.backup_fstab: true
+safety.no_delete_test: true
