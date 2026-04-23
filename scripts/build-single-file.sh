@@ -14,7 +14,6 @@ if [[ ! -f "$ENTRYPOINT" ]]; then
 fi
 
 {
-  printf '# packaged-from: bin/ntfs-perm-fix\n'
   cat "$ENTRYPOINT"
 } > "$ARTIFACT"
 
