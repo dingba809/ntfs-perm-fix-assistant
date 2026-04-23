@@ -11,6 +11,23 @@
 - `find`
 - `chmod`
 
+### 麒麟 V10 / 国产 Linux 桌面环境依赖说明
+
+- 在麒麟 V10、UOS、统信等国产桌面环境中，通常可直接安装：
+  - `bash`
+  - `util-linux`（提供 `findmnt`、`mountpoint`）
+  - `coreutils`（提供 `stat`、`chmod`）
+  - `findutils`（提供 `find`）
+- 参考命令（按发行版选择）：
+
+```bash
+sudo apt install bash util-linux coreutils findutils
+```
+
+```bash
+sudo dnf install bash util-linux coreutils findutils
+```
+
 ## 安全说明
 
 - `apply` 会递归修改目标目录及其子项权限，请先使用 `check`/`plan` 评估。
@@ -33,6 +50,27 @@ sudo bin/ntfs-perm-fix apply --dry-run /mnt/ntfs-data
 
 ```bash
 bin/ntfs-perm-fix report
+```
+
+## 单文件构建
+
+执行以下命令生成单文件发布包：
+
+```bash
+bash scripts/build-single-file.sh
+```
+
+- 构建产物路径：`dist/ntfs-perm-fix`
+- 如需手动赋予执行权限：
+
+```bash
+chmod +x dist/ntfs-perm-fix
+```
+
+- 运行示例：
+
+```bash
+./dist/ntfs-perm-fix --help
 ```
 
 ## 交互模式

@@ -8,6 +8,15 @@ fail() {
   exit 1
 }
 
+test_readme_documents_single_file_build() {
+  local readme="$ROOT_DIR/README.md"
+
+  [[ -f "$readme" ]] || fail "README.md should exist"
+  grep -q "单文件构建" "$readme" || fail "README should include 单文件构建 section"
+  grep -q "scripts/build-single-file.sh" "$readme" || fail "README should mention scripts/build-single-file.sh"
+  grep -q "dist/ntfs-perm-fix" "$readme" || fail "README should mention dist/ntfs-perm-fix artifact path"
+}
+
 test_build_single_file_creates_executable() {
   local dist_dir="$ROOT_DIR/dist"
   local artifact="$ROOT_DIR/dist/ntfs-perm-fix"
@@ -185,6 +194,7 @@ EOF
   [[ "$fixture_content" == *"second_func()"* ]] || fail "fixture artifact should include second_func() from sourced modules"
 }
 
+test_readme_documents_single_file_build
 test_build_single_file_inlines_modules
 test_build_single_file_creates_executable
 test_build_single_file_enters_interactive_menu_after_copy
