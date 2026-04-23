@@ -77,6 +77,27 @@ scan_access_issues() {
   printf '%s\n' "${issues[*]}"
 }
 
+list_ntfs_mountpoints() {
+  local source=""
+  local target=""
+  local fstype=""
+  local options=""
+  local normalized_fs=""
+
+  if ! command -v findmnt >/dev/null 2>&1; then
+    echo "findmnt command not found" >&2
+    return 1
+  fi
+
+  while read -r source target fstype options; do
+    [[ -n "$target" ]] || continue
+    normalized_fs="$(classify_fs "$fstype")"
+    if [[ "$normalized_fs" == "ntfs" || "$fstype" == "ntfs3" ]]; then
+      printf '%s|%s|%s|%s\n' "$source" "$target" "$fstype" "$options"
+    fi
+  done < <(findmnt -rn -o SOURCE,TARGET,FSTYPE,OPTIONS)
+}
+
 collect_mount_info() {
   local mountpoint="${1:-}"
   local source=""
