@@ -3,4 +3,5 @@
 docs/
 logs/
 reports/
+dist/
 *.log
