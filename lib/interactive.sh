@@ -169,7 +169,32 @@ interactive_run_diagnosis() {
   options="$(interactive_mount_info_value "$mount_info" "options" || printf 'unknown')"
   IFS='|' read -r _risk_level summary <<<"$(interactive_assess_risk "$mount_info")"
 
-  interactive_render_diagnosis_menu "$target" "$fs" "$options" "$summary"
+  while true; do
+    local diagnosis_choice=""
+    interactive_render_diagnosis_menu "$target" "$fs" "$options" "$summary"
+    printf '请选择推荐操作: '
+    if ! IFS= read -r diagnosis_choice; then
+      return 0
+    fi
+
+    case "$diagnosis_choice" in
+      1)
+        printf '已选择：执行安全修复（占位）\n'
+        ;;
+      2)
+        printf '已选择：先执行 dry-run（占位）\n'
+        ;;
+      3)
+        printf '已选择：查看详细报告（占位）\n'
+        ;;
+      0)
+        return 0
+        ;;
+      *)
+        printf '无效选择，请重试。\n'
+        ;;
+    esac
+  done
 }
 
 interactive_target_menu() {

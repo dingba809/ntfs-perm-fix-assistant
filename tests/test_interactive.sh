@@ -20,6 +20,16 @@ assert_contains() {
   fi
 }
 
+assert_not_contains() {
+  local content="$1"
+  local pattern="$2"
+  local name="$3"
+
+  if [[ "$content" == *"$pattern"* ]]; then
+    fail "$name: should not contain '$pattern', got '$content'"
+  fi
+}
+
 setup_fake_bin() {
   local dir
   dir="$(mktemp -d)"
@@ -228,7 +238,7 @@ test_select_mountpoint_enters_target_menu_and_runs_diagnosis() {
   make_stub "$fake_bin" "findmnt" 'if [[ "$1" == "-rn" ]]; then printf "/dev/sdb1 /mnt/data ntfs3 rw\n"; exit 0; fi; if [[ "$1" == "-n" ]]; then printf "/dev/sdb1 ntfs3 rw\n"; exit 0; fi; exit 1'
 
   set +e
-  output="$(PATH="$fake_bin:$PATH" run_interactive_menu $'1\n1\n1\n0\n0\n')"
+  output="$(PATH="$fake_bin:$PATH" run_interactive_menu $'1\n1\n1\n2\n0\n0\n0\n')"
   status=$?
   set -e
 
@@ -237,8 +247,31 @@ test_select_mountpoint_enters_target_menu_and_runs_diagnosis() {
   assert_contains "$output" "自动诊断（推荐）" "target menu should provide diagnosis option"
   assert_contains "$output" "诊断结论" "diagnosis output should be shown"
   assert_contains "$output" "推荐操作" "diagnosis recommendation should be shown"
+  assert_contains "$output" "请选择推荐操作" "diagnosis should enter recommendation menu state"
+  assert_contains "$output" "已选择：先执行 dry-run（占位）" "diagnosis menu should handle option 2"
+  assert_not_contains "$output" "该功能将在后续任务中实现。" "diagnosis option should not fall back to target menu handler"
 
   rm -rf "$fake_bin"
+}
+
+test_assess_risk_returns_high_for_read_only_mount() {
+  local mount_info
+  local result
+
+  mount_info=$'options=ro,uid=1000\naccess_issues=none\ndriver=ntfs3'
+  result="$(bash -c "source '$INTERACTIVE_LIB'; interactive_assess_risk \"\$1\"" -- "$mount_info")"
+
+  [[ "$result" == "high|read-only-access-warning" ]] || fail "read-only mount should be high risk"
+}
+
+test_assess_risk_returns_medium_for_access_issue() {
+  local mount_info
+  local result
+
+  mount_info=$'options=rw\naccess_issues=uid-not-set\ndriver=ntfs3'
+  result="$(bash -c "source '$INTERACTIVE_LIB'; interactive_assess_risk \"\$1\"" -- "$mount_info")"
+
+  [[ "$result" == "medium|read-write-access-warning" ]] || fail "mount with access issues should be medium risk"
 }
 
 test_scan_lists_ntfs_mountpoints
@@ -251,5 +284,7 @@ test_invalid_input_prompts_and_loops_then_exit
 test_eof_exits_stably
 test_diagnosis_recommends_safe_fix_for_rw_ntfs
 test_select_mountpoint_enters_target_menu_and_runs_diagnosis
+test_assess_risk_returns_high_for_read_only_mount
+test_assess_risk_returns_medium_for_access_issue
 
 echo "[PASS] test_interactive.sh"
