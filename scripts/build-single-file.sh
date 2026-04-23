@@ -68,15 +68,30 @@ strip_entrypoint_content() {
   done
 
   cat <<'SHIM'
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 project_root() {
   cd "$(dirname "${BASH_SOURCE[0]}")" && pwd
 }
+ROOT_DIR="$(project_root)"
 
 SHIM
 
   strip_entrypoint_content "$ENTRYPOINT"
 } > "$ARTIFACT"
+
+if grep -q "interactive_main_menu" "$ENTRYPOINT" && ! grep -q "interactive_main_menu()" "$ARTIFACT"; then
+  echo "[ERROR] packaged artifact missing interactive_main_menu()" >&2
+  exit 1
+fi
+
+if grep -q "run_report" "$ENTRYPOINT" && ! grep -q "run_report()" "$ARTIFACT"; then
+  echo "[ERROR] packaged artifact missing run_report()" >&2
+  exit 1
+fi
+
+if ! grep -q 'ROOT_DIR="$(project_root)"' "$ARTIFACT"; then
+  echo "[ERROR] packaged artifact missing single-file runtime ROOT_DIR shim" >&2
+  exit 1
+fi
 
 chmod +x "$ARTIFACT"
 echo "built: $ARTIFACT"

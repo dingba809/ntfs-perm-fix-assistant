@@ -69,6 +69,59 @@ test_build_single_file_uses_self_root_after_copy() {
   [[ "$report_output" == *"no report found in $temp_dir/logs"* ]] || fail "copied artifact should use its own directory as runtime root"
 }
 
+test_build_single_file_enters_interactive_menu_after_copy() {
+  local dist_dir="$ROOT_DIR/dist"
+  local artifact="$ROOT_DIR/dist/ntfs-perm-fix"
+  local temp_dir
+  local copied_artifact
+  local interactive_output
+  local interactive_status
+
+  rm -rf "$dist_dir"
+  temp_dir="$(mktemp -d)"
+  trap 'rm -rf "$dist_dir" "$temp_dir"' RETURN
+
+  bash "$ROOT_DIR/scripts/build-single-file.sh"
+
+  copied_artifact="$temp_dir/ntfs-perm-fix"
+  cp "$artifact" "$copied_artifact"
+  chmod +x "$copied_artifact"
+
+  set +e
+  interactive_output="$(printf '0\n' | "$copied_artifact" 2>&1)"
+  interactive_status=$?
+  set -e
+  [[ "$interactive_status" -eq 0 ]] || fail "copied artifact should exit successfully after selecting 0 in interactive menu"
+  [[ "$interactive_output" == *"NTFS 权限修复助手主菜单"* ]] || fail "copied artifact without args should enter interactive main menu"
+  [[ "$interactive_output" == *"已退出。"* ]] || fail "copied artifact interactive mode should exit cleanly after input 0"
+}
+
+test_build_single_file_report_command_shows_hint_when_missing() {
+  local dist_dir="$ROOT_DIR/dist"
+  local artifact="$ROOT_DIR/dist/ntfs-perm-fix"
+  local temp_dir
+  local copied_artifact
+  local report_output
+  local report_status
+
+  rm -rf "$dist_dir"
+  temp_dir="$(mktemp -d)"
+  trap 'rm -rf "$dist_dir" "$temp_dir"' RETURN
+
+  bash "$ROOT_DIR/scripts/build-single-file.sh"
+
+  copied_artifact="$temp_dir/ntfs-perm-fix"
+  cp "$artifact" "$copied_artifact"
+  chmod +x "$copied_artifact"
+
+  set +e
+  report_output="$("$copied_artifact" report 2>&1)"
+  report_status=$?
+  set -e
+  [[ "$report_status" -ne 0 ]] || fail "copied artifact report should fail when no report exists"
+  [[ "$report_output" == *"no report found in $temp_dir/logs"* ]] || fail "copied artifact report should use packaged runtime root logs path"
+}
+
 test_build_single_file_inlines_modules() {
   local dist_dir="$ROOT_DIR/dist"
   local artifact="$ROOT_DIR/dist/ntfs-perm-fix"
@@ -134,6 +187,8 @@ EOF
 
 test_build_single_file_inlines_modules
 test_build_single_file_creates_executable
+test_build_single_file_enters_interactive_menu_after_copy
+test_build_single_file_report_command_shows_hint_when_missing
 test_build_single_file_uses_self_root_after_copy
 test_build_single_file_uses_entrypoint_source_order
 
