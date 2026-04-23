@@ -253,10 +253,14 @@ interactive_run_diagnosis() {
 
   if ! declare -F collect_mount_info >/dev/null 2>&1; then
     echo "collect_mount_info is not available" >&2
+    printf '自动诊断失败，请检查后重试。\n'
     return 1
   fi
 
-  mount_info="$(collect_mount_info "$target")" || return 1
+  if ! mount_info="$(collect_mount_info "$target")"; then
+    printf '自动诊断失败，请检查后重试。\n'
+    return 1
+  fi
   fs="$(interactive_mount_info_value "$mount_info" "fstype" || printf 'unknown')"
   options="$(interactive_mount_info_value "$mount_info" "options" || printf 'unknown')"
   IFS='|' read -r _risk_level summary <<<"$(interactive_assess_risk "$mount_info")"
@@ -283,8 +287,11 @@ interactive_run_diagnosis() {
       3)
         if ! declare -F collect_checked_mount_info >/dev/null 2>&1; then
           echo "collect_checked_mount_info is not available" >&2
+          printf '查看详细信息失败，请重试。\n'
         else
-          collect_checked_mount_info "$target"
+          if ! collect_checked_mount_info "$target"; then
+            printf '查看详细信息失败，请重试。\n'
+          fi
         fi
         ;;
       0)
@@ -310,20 +317,28 @@ interactive_target_menu() {
 
     case "$choice" in
       1)
-        interactive_run_diagnosis "$target"
+        if ! interactive_run_diagnosis "$target"; then
+          printf '自动诊断失败，请检查后重试。\n'
+        fi
         ;;
       2)
         if ! declare -F collect_checked_mount_info >/dev/null 2>&1; then
           echo "collect_checked_mount_info is not available" >&2
+          printf '查看详细信息失败，请重试。\n'
         else
-          collect_checked_mount_info "$target"
+          if ! collect_checked_mount_info "$target"; then
+            printf '查看详细信息失败，请重试。\n'
+          fi
         fi
         ;;
       3)
         if ! declare -F run_plan >/dev/null 2>&1; then
           echo "run_plan is not available" >&2
+          printf '生成修复建议失败，请重试。\n'
         else
-          run_plan "$target"
+          if ! run_plan "$target"; then
+            printf '生成修复建议失败，请重试。\n'
+          fi
         fi
         ;;
       4)

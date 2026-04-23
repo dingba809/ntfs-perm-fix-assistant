@@ -292,12 +292,13 @@ test_target_menu_option_2_shows_detailed_info() {
   local status
 
   set +e
-  output="$(printf '2\n0\n' | bash -c "source '$INTERACTIVE_LIB'; collect_checked_mount_info(){ printf 'mountpoint=%s\nfstype=ntfs3\n' \"\$1\"; }; interactive_target_menu '/mnt/data'" 2>&1)"
+  output="$(printf '2\n0\n' | bash -c "set -euo pipefail; source '$INTERACTIVE_LIB'; collect_checked_mount_info(){ printf 'mountpoint=%s\nfstype=ntfs3\n' \"\$1\"; }; interactive_target_menu '/mnt/data'; printf '__TARGET_MENU_DONE__\n'" 2>&1)"
   status=$?
   set -e
 
   [[ "$status" -eq 0 ]] || fail "target menu option 2 should return successfully"
   assert_contains "$output" "mountpoint=/mnt/data" "target menu option 2 should call collect_checked_mount_info"
+  assert_contains "$output" "__TARGET_MENU_DONE__" "target menu option 2 should keep shell alive under strict mode"
 }
 
 test_target_menu_option_3_generates_plan() {
@@ -305,12 +306,28 @@ test_target_menu_option_3_generates_plan() {
   local status
 
   set +e
-  output="$(printf '3\n0\n' | bash -c "source '$INTERACTIVE_LIB'; run_plan(){ printf 'PLAN:%s\n' \"\$1\"; }; interactive_target_menu '/mnt/data'" 2>&1)"
+  output="$(printf '3\n0\n' | bash -c "set -euo pipefail; source '$INTERACTIVE_LIB'; run_plan(){ printf 'PLAN:%s\n' \"\$1\"; }; interactive_target_menu '/mnt/data'; printf '__TARGET_MENU_DONE__\n'" 2>&1)"
   status=$?
   set -e
 
   [[ "$status" -eq 0 ]] || fail "target menu option 3 should return successfully"
   assert_contains "$output" "PLAN:/mnt/data" "target menu option 3 should call run_plan"
+  assert_contains "$output" "__TARGET_MENU_DONE__" "target menu option 3 should keep shell alive under strict mode"
+}
+
+test_target_menu_plan_failure_is_recoverable_under_strict_mode() {
+  local output
+  local status
+
+  set +e
+  output="$(printf '3\n0\n' | bash -c "set -euo pipefail; source '$INTERACTIVE_LIB'; run_plan(){ echo 'simulated plan failure' >&2; return 7; }; interactive_target_menu '/mnt/data'; printf '__TARGET_MENU_DONE__\n'" 2>&1)"
+  status=$?
+  set -e
+
+  [[ "$status" -eq 0 ]] || fail "target menu should not crash when run_plan fails under strict mode"
+  assert_contains "$output" "simulated plan failure" "target menu should preserve run_plan failure output"
+  assert_contains "$output" "生成修复建议失败" "target menu should show recoverable hint for run_plan failure"
+  assert_contains "$output" "__TARGET_MENU_DONE__" "target menu should remain recoverable after plan failure"
 }
 
 test_interactive_safe_fix_and_dry_run_call_run_apply() {
@@ -332,6 +349,36 @@ test_interactive_safe_fix_and_dry_run_call_run_apply() {
   assert_contains "$output_dry" "APPLY:/mnt/data dry_run=true" "interactive_safe_dry_run should call run_apply with dry_run=true"
 }
 
+test_diagnosis_failure_is_recoverable_under_strict_mode() {
+  local output
+  local status
+
+  set +e
+  output="$(printf '1\n0\n' | bash -c "set -euo pipefail; source '$INTERACTIVE_LIB'; collect_mount_info(){ echo 'simulated diagnosis failure' >&2; return 9; }; interactive_target_menu '/mnt/data'; printf '__TARGET_MENU_DONE__\n'" 2>&1)"
+  status=$?
+  set -e
+
+  [[ "$status" -eq 0 ]] || fail "target menu should not crash when diagnosis init fails under strict mode"
+  assert_contains "$output" "simulated diagnosis failure" "diagnosis failure output should be preserved"
+  assert_contains "$output" "自动诊断失败" "target menu should show recoverable diagnosis hint"
+  assert_contains "$output" "__TARGET_MENU_DONE__" "target menu should remain recoverable after diagnosis failure"
+}
+
+test_diagnosis_detail_failure_is_recoverable_under_strict_mode() {
+  local output
+  local status
+
+  set +e
+  output="$(printf '3\n0\n' | bash -c "set -euo pipefail; source '$INTERACTIVE_LIB'; collect_mount_info(){ printf 'fstype=ntfs3\noptions=rw\naccess_issues=none\n'; }; collect_checked_mount_info(){ echo 'simulated detail failure' >&2; return 6; }; interactive_run_diagnosis '/mnt/data'; printf '__DIAGNOSIS_DONE__\n'" 2>&1)"
+  status=$?
+  set -e
+
+  [[ "$status" -eq 0 ]] || fail "diagnosis flow should not crash when detail helper fails under strict mode"
+  assert_contains "$output" "simulated detail failure" "diagnosis detail failure output should be preserved"
+  assert_contains "$output" "查看详细信息失败" "diagnosis should show recoverable hint when detail helper fails"
+  assert_contains "$output" "__DIAGNOSIS_DONE__" "diagnosis loop should remain recoverable after detail failure"
+}
+
 test_scan_lists_ntfs_mountpoints
 test_scan_mountpoints_findmnt_failure_returns_error
 test_select_mountpoint_keeps_scan_error_semantics
@@ -347,6 +394,9 @@ test_assess_risk_returns_medium_for_access_issue
 test_interactive_confirm_action_cancel_on_n
 test_target_menu_option_2_shows_detailed_info
 test_target_menu_option_3_generates_plan
+test_target_menu_plan_failure_is_recoverable_under_strict_mode
 test_interactive_safe_fix_and_dry_run_call_run_apply
+test_diagnosis_failure_is_recoverable_under_strict_mode
+test_diagnosis_detail_failure_is_recoverable_under_strict_mode
 
 echo "[PASS] test_interactive.sh"
